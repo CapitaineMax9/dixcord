@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' dxc: data: blob:; media-src 'self' dxc: blob: mediastream:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dixcord</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div id="app">
+    <nav id="server-bar" aria-label="Serveurs"></nav>
+
+    <aside id="sidebar">
+      <header id="server-header"></header>
+      <div id="channel-list"></div>
+      <div id="voice-status" hidden></div>
+      <footer id="user-panel"></footer>
+    </aside>
+
+    <main id="main">
+      <header id="channel-header"></header>
+      <div id="main-body">
+        <section id="chat-view" hidden>
+          <div id="messages"></div>
+          <form id="composer" autocomplete="off">
+            <div id="pending-files" hidden></div>
+            <div class="composer-row">
+              <button type="button" id="attach-btn" class="icon-btn" title="Joindre des fichiers" aria-label="Joindre des fichiers">
+                <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
+              </button>
+              <textarea id="composer-input" rows="1" maxlength="4000" aria-label="Message"></textarea>
+            </div>
+          </form>
+          <div class="drop-overlay"><div>Dépose tes fichiers pour les envoyer</div></div>
+        </section>
+        <section id="voice-view" hidden></section>
+        <section id="empty-view"></section>
+      </div>
+    </main>
+
+    <aside id="member-list" aria-label="Membres"></aside>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast-root" aria-live="polite"></div>
+</body>
+</html>
