@@ -19,16 +19,35 @@ Un Discord maison, **100 % pair-à-pair** : pas de serveur à héberger, juste d
 
 ## Installation
 
+### Windows : télécharger le .exe (le plus simple)
+
+Va dans la page [**Releases**](https://github.com/CapitaineMax9/dixcord/releases) du dépôt et télécharge, dans la dernière version :
+
+- `Dixcord-Setup-x.y.z.exe` : **installateur**. Un double-clic installe Dixcord, sans droits administrateur, et crée un raccourci sur le bureau et dans le menu Démarrer.
+- ou `Dixcord-x.y.z-portable.exe` : **version portable**. Elle se lance directement, sans installation (pratique sur une clé USB).
+
+> Au premier lancement, Windows peut afficher « Windows a protégé votre ordinateur » : l'application n'est pas signée par un certificat payant. Clique sur **Informations complémentaires**, puis **Exécuter quand même**. Si le pare-feu demande l'autorisation, clique sur **Autoriser** : sans ça, les connexions directes échouent.
+
+### Depuis le code source (Windows, macOS, Linux)
+
 Il faut [Node.js](https://nodejs.org) 20 ou plus récent.
 
 ```bash
-git clone <ce dépôt>
+git clone https://github.com/CapitaineMax9/dixcord.git
 cd dixcord
 npm install
 npm start
 ```
 
-Chaque ami fait de même sur son ordinateur (Windows, macOS ou Linux).
+### Publier une nouvelle version
+
+1. Sur GitHub : **Releases**, puis **Draft a new release**.
+2. Dans **Choose a tag**, tape un nouveau tag de la forme `v1.2.3` (par exemple `v0.1.0`, puis `v0.2.0`…) et choisis « Create new tag on publish ».
+3. Donne un titre, puis clique sur **Publish release**.
+
+Le workflow GitHub Actions [`release.yml`](.github/workflows/release.yml) se lance tout seul sur une machine Windows. Il exécute les tests, fabrique les deux `.exe` et les attache à la release. Compte une dizaine de minutes, et suis l'avancement dans l'onglet **Actions**.
+
+Pour fabriquer les `.exe` toi-même sur un PC Windows : `npm run dist:win` (résultat dans `dist/`).
 
 ## Utilisation
 
@@ -155,7 +174,7 @@ Sur chaque connexion Hyperswarm, les trames sont de la forme `[longueur][en-têt
 
 ## Idées pour la suite
 
-- Installateurs prêts à l'emploi (`.exe`, `.dmg`, AppImage) avec electron-builder, pour que tes amis n'aient pas besoin de Node.js.
+- Versions macOS (`.dmg`) et Linux (AppImage) dans les releases.
 - Messages privés, réponses, réactions, mentions, modification et suppression de messages.
 - Rôles et modération (signatures d'un propriétaire), rotation du secret du serveur.
 - Chiffrement des données locales.

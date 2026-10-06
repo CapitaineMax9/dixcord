@@ -21,15 +21,17 @@ function step (label) {
 }
 
 async function launch (name, dataDir, bootstrap) {
+  // DIXCORD_E2E_EXECUTABLE : tester une application empaquetée (dist/…) au lieu du code source.
+  const packaged = process.env.DIXCORD_E2E_EXECUTABLE
   const args = [
-    ROOT,
+    ...(packaged ? [] : [ROOT]),
     '--use-fake-device-for-media-stream',
     '--use-fake-ui-for-media-stream',
     '--disable-features=WebRtcHideLocalIpsWithMdns'
   ]
   if (process.getuid && process.getuid() === 0) args.push('--no-sandbox')
   const app = await electron.launch({
-    executablePath: require('electron'),
+    executablePath: packaged ? path.resolve(packaged) : require('electron'),
     args,
     env: { ...process.env, DIXCORD_DATA_DIR: dataDir, DIXCORD_BOOTSTRAP: bootstrap, DIXCORD_DHT_HOST: '127.0.0.1', DIXCORD_DEBUG: '1' }
   })

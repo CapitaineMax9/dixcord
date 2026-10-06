@@ -11,11 +11,64 @@
   },
   "devDependencies": {
     "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "playwright-core": "^1.63.0"
   },
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
-    "test:e2e": "node test/e2e/smoke.js"
+    "test:e2e": "node test/e2e/smoke.js",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
+  },
+  "author": "CapitaineMax9",
+  "build": {
+    "appId": "io.github.capitainemax9.dixcord",
+    "productName": "Dixcord",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!node_modules/**/prebuilds/**",
+      "node_modules/**/prebuilds/${platform}-${arch}/**"
+    ],
+    "asar": false,
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "shortcutName": "Dixcord",
+      "artifactName": "Dixcord-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "Dixcord-${version}-portable.exe"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Network",
+      "icon": "build/icon.png"
+    }
   }
 }

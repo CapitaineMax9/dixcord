@@ -1,0 +1,63 @@
+# Fabrique les .exe Windows de Dixcord et les attache à la release GitHub.
+#
+# Pour publier une version : sur GitHub, « Releases » → « Draft a new release »,
+# crée un tag du type v1.2.3, puis « Publish release ». Quelques minutes plus
+# tard, l'installateur et la version portable apparaissent dans la release.
+#
+# On peut aussi lancer ce workflow à la main (onglet « Actions ») : les .exe
+# sont alors disponibles dans les « Artifacts » de l'exécution.
+
+name: Release Windows
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      - name: Numéro de version depuis le tag de la release
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+].*)?$ ]]; then
+            echo "::error::Le tag « $GITHUB_REF_NAME » doit être de la forme v1.2.3"
+            exit 1
+          fi
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Fabriquer les .exe
+        run: npm run dist:win
+
+      - name: Conserver les .exe (artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dixcord-windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+      - name: Attacher les .exe à la release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.exe --clobber
