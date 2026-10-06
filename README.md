@@ -19,14 +19,29 @@ Un Discord maison, **100 % pair-à-pair** : pas de serveur à héberger, juste d
 
 ## Installation
 
-### Windows : télécharger le .exe (le plus simple)
+### Télécharger (le plus simple)
 
-Va dans la page [**Releases**](https://github.com/CapitaineMax9/dixcord/releases) du dépôt et télécharge, dans la dernière version :
+Va dans la page [**Releases**](https://github.com/CapitaineMax9/dixcord/releases) du dépôt et prends, dans la dernière version, le fichier qui correspond à ton système.
 
-- `Dixcord-Setup-x.y.z.exe` : **installateur**. Un double-clic installe Dixcord, sans droits administrateur, et crée un raccourci sur le bureau et dans le menu Démarrer.
-- ou `Dixcord-x.y.z-portable.exe` : **version portable**. Elle se lance directement, sans installation (pratique sur une clé USB).
+**Windows**
+- `Dixcord-Setup-x.y.z.exe` : **installateur**. Un double-clic installe Dixcord, sans droits administrateur, avec un raccourci sur le bureau et dans le menu Démarrer.
+- `Dixcord-x.y.z-portable.exe` : **version portable**, qui se lance sans installation.
 
-> Au premier lancement, Windows peut afficher « Windows a protégé votre ordinateur » : l'application n'est pas signée par un certificat payant. Clique sur **Informations complémentaires**, puis **Exécuter quand même**. Si le pare-feu demande l'autorisation, clique sur **Autoriser** : sans ça, les connexions directes échouent.
+> Au premier lancement, Windows peut afficher « Windows a protégé votre ordinateur » : l'application n'est pas signée par un certificat payant. Clique sur **Informations complémentaires**, puis **Exécuter quand même**. Si le pare-feu demande l'autorisation, clique sur **Autoriser**.
+
+**macOS**
+- `Dixcord-x.y.z-mac-arm64.dmg` : Mac à puce Apple (M1, M2, M3…).
+- `Dixcord-x.y.z-mac-x64.dmg` : Mac Intel.
+
+Ouvre le `.dmg` et glisse Dixcord dans **Applications**.
+
+> L'application n'est pas certifiée par Apple (il faut un compte développeur payant). Au premier lancement, macOS refuse de l'ouvrir. Va dans **Réglages Système**, puis **Confidentialité et sécurité**, descends jusqu'au message sur Dixcord et clique sur **Ouvrir quand même**. Si macOS dit que l'application « est endommagée », lance une fois cette commande dans le Terminal : `xattr -cr /Applications/Dixcord.app`
+
+**Linux**
+- `Dixcord-x.y.z-linux-x86_64.AppImage` : un seul fichier. Rends-le exécutable (`chmod +x Dixcord-*.AppImage`), puis lance-le.
+- `Dixcord-x.y.z-linux-x64.tar.gz` : archive à décompresser, puis lance `./dixcord`.
+
+> L'AppImage a besoin de FUSE 2 (sur Ubuntu : `sudo apt install libfuse2`). Sur Ubuntu 24.04 et plus, si l'application se ferme aussitôt avec un message sur le « sandbox », lance-la avec `--no-sandbox`.
 
 ### Depuis le code source (Windows, macOS, Linux)
 
@@ -45,9 +60,9 @@ npm start
 2. Dans **Choose a tag**, tape un nouveau tag de la forme `v1.2.3` (par exemple `v0.1.0`, puis `v0.2.0`…) et choisis « Create new tag on publish ».
 3. Donne un titre, puis clique sur **Publish release**.
 
-Le workflow GitHub Actions [`release.yml`](.github/workflows/release.yml) se lance tout seul sur une machine Windows. Il exécute les tests, fabrique les deux `.exe` et les attache à la release. Compte une dizaine de minutes, et suis l'avancement dans l'onglet **Actions**.
+Le workflow GitHub Actions [`release.yml`](.github/workflows/release.yml) se lance tout seul sur trois machines (Windows, macOS, Linux). Chacune exécute les tests, fabrique ses fichiers et les attache à la release. Compte une dizaine de minutes, et suis l'avancement dans l'onglet **Actions**.
 
-Pour fabriquer les `.exe` toi-même sur un PC Windows : `npm run dist:win` (résultat dans `dist/`).
+Pour fabriquer toi-même : `npm run dist:win` (sur Windows), `npm run dist:mac` (sur un Mac) ou `npm run dist:linux` (sur Linux). Le résultat est dans `dist/`.
 
 ## Utilisation
 
@@ -174,7 +189,7 @@ Sur chaque connexion Hyperswarm, les trames sont de la forme `[longueur][en-têt
 
 ## Idées pour la suite
 
-- Versions macOS (`.dmg`) et Linux (AppImage) dans les releases.
+- Signature officielle des applications (Windows, Apple) pour supprimer les avertissements au premier lancement.
 - Messages privés, réponses, réactions, mentions, modification et suppression de messages.
 - Rôles et modération (signatures d'un propriétaire), rotation du secret du serveur.
 - Chiffrement des données locales.

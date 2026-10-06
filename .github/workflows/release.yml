@@ -1,13 +1,14 @@
-# Fabrique les .exe Windows de Dixcord et les attache à la release GitHub.
+# Fabrique Dixcord pour Windows, macOS et Linux et attache les fichiers à la
+# release GitHub.
 #
 # Pour publier une version : sur GitHub, « Releases » → « Draft a new release »,
-# crée un tag du type v1.2.3, puis « Publish release ». Quelques minutes plus
-# tard, l'installateur et la version portable apparaissent dans la release.
+# crée un tag du type v1.2.3 (ou 1.2.3), puis « Publish release ». Quelques
+# minutes plus tard, les fichiers apparaissent dans la release.
 #
-# On peut aussi lancer ce workflow à la main (onglet « Actions ») : les .exe
-# sont alors disponibles dans les « Artifacts » de l'exécution.
+# On peut aussi lancer ce workflow à la main (onglet « Actions ») : les
+# fichiers sont alors disponibles dans les « Artifacts » de l'exécution.
 
-name: Release Windows
+name: Release
 
 on:
   release:
@@ -18,8 +19,26 @@ permissions:
   contents: write
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+            script: dist:win
+            files: dist/*.exe
+          - os: macos-latest
+            name: macos
+            script: dist:mac
+            files: dist/*.dmg
+          - os: ubuntu-latest
+            name: linux
+            script: dist:linux
+            files: |
+              dist/*.AppImage
+              dist/*.tar.gz
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,19 +64,32 @@ jobs:
           fi
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
-      - name: Fabriquer les .exe
-        run: npm run dist:win
+      - name: Fabriquer
+        run: npm run ${{ matrix.script }}
 
-      - name: Conserver les .exe (artifacts)
+      # Sur Mac à puce Apple, une application sans signature (même « ad hoc »)
+      # est refusée : on vérifie qu'elle est bien signée.
+      - name: Vérifier la signature macOS
+        if: matrix.name == 'macos'
+        run: |
+          for app in dist/mac*/Dixcord.app; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+            codesign -dv "$app" 2>&1 | grep -E "Signature|Identifier"
+          done
+
+      - name: Conserver les fichiers (artifacts)
         uses: actions/upload-artifact@v4
         with:
-          name: dixcord-windows
-          path: dist/*.exe
+          name: dixcord-${{ matrix.name }}
+          path: ${{ matrix.files }}
           if-no-files-found: error
 
-      - name: Attacher les .exe à la release
+      - name: Attacher les fichiers à la release
         if: github.event_name == 'release'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/*.exe --clobber
+        run: |
+          shopt -s nullglob
+          files=(dist/*.exe dist/*.dmg dist/*.AppImage dist/*.tar.gz)
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
