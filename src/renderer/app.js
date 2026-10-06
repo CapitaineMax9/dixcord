@@ -48,6 +48,7 @@ async function boot () {
     myKey: init.me.key,
     iceServers: init.iceServers,
     platform: init.platform,
+    noDirect: init.noDirect,
     onChange: onVoiceChange,
     onSpeaking: updateSpeaking,
     onError: (message) => toast(message, 'error')
@@ -745,7 +746,8 @@ function renderMembers () {
   const offline = state.server.members.filter((m) => !m.online)
   const row = (m) => {
     const av = avatar(m.key, m.name, 32)
-    return h('div', { class: classes('member', { offline: !m.online }), title: 'Clé : ' + m.key },
+    const how = m.relayed ? '\nConnecté via un autre membre (pas de liaison directe)' : ''
+    return h('div', { class: classes('member', { offline: !m.online }), title: 'Clé : ' + m.key + how },
       h('div', { class: 'avatar-wrap' }, av, h('span', { class: classes('status-dot', { online: m.online }) })),
       h('span', { class: 'member-name' }, m.name, m.me ? h('span', { class: 'me-tag' }, ' (toi)') : null))
   }
@@ -861,9 +863,10 @@ function videoFor (stream, { mirror = false } = {}) {
   let el = videoEls.get(stream.id)
   if (!el) {
     el = h('video', { autoplay: true, playsInline: true, muted: true })
-    el.srcObject = stream
     videoEls.set(stream.id, el)
   }
+  // Un flux relayé peut porter le même identifiant qu'un autre flux.
+  if (el.srcObject !== stream) el.srcObject = stream
   el.classList.toggle('mirror', mirror)
   el.play().catch(() => {})
   return el

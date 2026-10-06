@@ -20,6 +20,7 @@ const { ServerStore } = require('./store')
 const { FileStore } = require('./files')
 const { encodeFrame, FrameDecoder } = require('./framing')
 const { encodeInvite, decodeInvite } = require('./invite')
+const { canonical } = require('./canonical')
 
 const MAX_UPLOADS_PER_PEER = 4
 
@@ -76,6 +77,9 @@ class DixcordNode extends EventEmitter {
     if (!this.swarm) return
     clearInterval(this._timer)
     for (const dl of this.downloads.values()) this._failDownload(dl, new Error('Application arrêtée'))
+    // « Au revoir » : les autres nous voient hors ligne tout de suite.
+    for (const server of this.servers.values()) this._broadcastPresence(server, true)
+    if (this.peers.size) await new Promise((resolve) => setTimeout(resolve, 150))
     const swarm = this.swarm
     this.swarm = null
     for (const peer of this.peers.values()) peer.conn.destroy()
@@ -101,7 +105,10 @@ class DixcordNode extends EventEmitter {
     this.identity.name = name
     this._saveIdentity()
     for (const peer of this.peers.values()) this._send(peer, { t: 'name', name })
-    for (const server of this.servers.values()) this._append(server, 'profile', { name })
+    for (const server of this.servers.values()) {
+      this._append(server, 'profile', { name })
+      this._broadcastPresence(server)
+    }
     this.emit('me')
     return this.me()
   }
@@ -150,6 +157,7 @@ class DixcordNode extends EventEmitter {
       store,
       cachedName,
       discovery: null,
+      presence: new Map(), // clé -> présence signée reçue (directement ou relayée)
       lonelyDelay: C.LONELY_REFRESH_MIN,
       nextRefresh: Date.now() + C.LONELY_REFRESH_MIN
     }
@@ -219,6 +227,7 @@ class DixcordNode extends EventEmitter {
   async leaveServer (id) {
     const server = this._getServer(id)
     if (this.voice && this.voice.server === id) this.setVoice(null)
+    this._broadcastPresence(server, true)
     for (const peer of this.peers.values()) {
       if (peer.servers.delete(id)) this._send(peer, { t: 'part', s: id })
       peer.voice.delete(id)
@@ -272,6 +281,14 @@ class DixcordNode extends EventEmitter {
     for (const peer of this.peers.values()) {
       if (peer.servers.has(server.id)) add(peer.key, true)
     }
+    // Membres joignables seulement via un autre membre (présence relayée).
+    for (const [key, entry] of server.presence) {
+      if (key !== this.key && this._fresh(entry)) {
+        add(key, true)
+        const m = map.get(key)
+        if (!this._direct(server, key)) m.relayed = true
+      }
+    }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr'))
   }
 
@@ -279,7 +296,18 @@ class DixcordNode extends EventEmitter {
     if (key === this.key) return this.name
     const peer = this.peers.get(key)
     if (peer && peer.name && peer.servers.has(server.id)) return peer.name
+    const entry = server.presence.get(key)
+    if (entry && entry.p.name) return entry.p.name
     return server.store.profileName(key) || 'Anonyme-' + key.slice(0, 4)
+  }
+
+  _direct (server, key) {
+    const peer = this.peers.get(key)
+    return peer && peer.servers.has(server.id) ? peer : null
+  }
+
+  _fresh (entry) {
+    return !entry.p.off && Date.now() - entry.at < C.PRESENCE_TTL
   }
 
   // ---------------------------------------------------------------------------
@@ -518,10 +546,13 @@ class DixcordNode extends EventEmitter {
     this.voice = next
     if (prev && (!next || prev.server !== next.server)) {
       this._sendToServer(prev.server, { t: 'voice', s: prev.server, ch: null })
+      const server = this.servers.get(prev.server)
+      if (server) this._broadcastPresence(server)
       this.emit('voice', prev.server)
     }
     if (next) {
       this._sendToServer(next.server, this._voiceFrame())
+      this._broadcastPresence(this.servers.get(next.server))
       this.emit('voice', next.server)
     }
   }
@@ -546,14 +577,101 @@ class DixcordNode extends EventEmitter {
       const v = peer.servers.has(serverId) && peer.voice.get(serverId)
       if (v) add(v.ch, { key: peer.key, name: this._nameOf(server, peer.key), me: false, mute: v.mute, deaf: v.deaf, video: v.video, screen: v.screen })
     }
+    // État vocal des membres qu'on ne voit qu'au travers d'un autre membre.
+    for (const [key, entry] of server.presence) {
+      const v = entry.p.voice
+      if (!v || key === this.key || this._direct(server, key) || !this._fresh(entry)) continue
+      add(v.ch, { key, name: this._nameOf(server, key), me: false, relayed: true, mute: v.mute, deaf: v.deaf, video: v.video, screen: v.screen })
+    }
     return out
   }
 
+  // Signalisation WebRTC : directe si possible, sinon relayée (et signée).
   sendRtc (serverId, toKey, data) {
-    const peer = this.peers.get(toKey)
-    if (!peer || !peer.servers.has(serverId)) return false
-    this._send(peer, { t: 'rtc', s: serverId, d: data })
+    const server = this._getServer(serverId)
+    const direct = this._direct(server, toKey)
+    if (direct) {
+      this._send(direct, { t: 'rtc', s: serverId, d: data })
+      return true
+    }
+    const r = { s: serverId, from: this.key, to: toKey, ts: Date.now(), d: data }
+    let sig
+    try {
+      sig = cr.sign(rtcPayload(r), this.keyPair.secretKey).toString('hex')
+    } catch {
+      return false
+    }
+    return this._routeRtc(server, { t: 'rtc', ...r, sig, hops: 0 }, null)
+  }
+
+  _routeRtc (server, frame, from) {
+    const direct = this._direct(server, frame.to)
+    if (direct) {
+      if (direct === from) return false
+      this._send(direct, frame)
+      return true
+    }
+    const entry = server.presence.get(frame.to)
+    const via = entry && this._fresh(entry) && this._direct(server, entry.via)
+    if (!via || via === from) return false
+    this._send(via, frame)
     return true
+  }
+
+  // ---------------------------------------------------------------------------
+  // Présence (relayée de proche en proche, signée par son auteur)
+
+  _ownPresence (server, off = false) {
+    const v = this.voice && this.voice.server === server.id ? this.voice : null
+    const p = {
+      key: this.key,
+      name: this.name,
+      ts: Date.now(),
+      voice: v ? { ch: v.channel, mute: v.mute, deaf: v.deaf, video: v.video, screen: v.screen } : null
+    }
+    if (off) p.off = true
+    return p
+  }
+
+  _broadcastPresence (server, off = false) {
+    if (!server) return
+    const p = this._ownPresence(server, off)
+    const sig = cr.sign(presencePayload(server.id, p), this.keyPair.secretKey).toString('hex')
+    this._sendToServer(server.id, { t: 'presence', s: server.id, p, sig })
+  }
+
+  _onPresence (peer, server, h) {
+    const p = h.p
+    if (!validPresence(p) || p.key === this.key || typeof h.sig !== 'string') return
+    const prev = server.presence.get(p.key)
+    if (prev && prev.p.ts >= p.ts) return // déjà vu (ou plus ancien)
+    if (!cr.verify(presencePayload(server.id, p), Buffer.from(h.sig, 'hex'), Buffer.from(p.key, 'hex'))) return
+    const before = prev ? presenceView(this, server, p.key, prev) : null
+    const entry = { p, sig: h.sig, at: Date.now(), via: peer.key }
+    server.presence.set(p.key, entry)
+    // Relais aux autres membres directement connectés.
+    for (const other of this.peers.values()) {
+      if (other !== peer && other.key !== p.key && other.servers.has(server.id)) {
+        this._send(other, { t: 'presence', s: server.id, p, sig: h.sig })
+      }
+    }
+    this._presenceChanged(server, before, presenceView(this, server, p.key, entry))
+  }
+
+  _presenceChanged (server, before, after) {
+    if (before === after) return
+    this.emit('server-changed', server.id)
+    this.emit('voice', server.id)
+  }
+
+  _expirePresence () {
+    for (const server of this.servers.values()) {
+      for (const [key, entry] of server.presence) {
+        if (entry.expired || this._fresh(entry)) continue
+        entry.expired = true
+        if (!this._direct(server, key)) this._presenceChanged(server, 'x', 'y')
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -608,9 +726,15 @@ class DixcordNode extends EventEmitter {
       if (dl.peer === peer) this._nextSource(dl)
     }
     for (const serverId of peer.servers) {
-      if (!this.servers.has(serverId)) continue
+      const server = this.servers.get(serverId)
+      if (!server) continue
+      // Les présences reçues par ce pair ne sont plus garanties : elles
+      // seront rafraîchies par un autre chemin s'il en existe un.
+      for (const entry of server.presence.values()) {
+        if (entry.via === peer.key) entry.at = 0
+      }
       this.emit('server-changed', serverId)
-      if (peer.voice.has(serverId)) this.emit('voice', serverId)
+      this.emit('voice', serverId)
     }
     peer.servers.clear()
     peer.voice.clear()
@@ -632,6 +756,12 @@ class DixcordNode extends EventEmitter {
     peer.servers.add(server.id)
     this._send(peer, { t: 'sync', s: server.id, have: server.store.vector() })
     if (this.voice && this.voice.server === server.id) this._send(peer, this._voiceFrame())
+    // Notre présence, et celle des membres qu'il ne voit peut-être pas.
+    const own = this._ownPresence(server)
+    this._send(peer, { t: 'presence', s: server.id, p: own, sig: cr.sign(presencePayload(server.id, own), this.keyPair.secretKey).toString('hex') })
+    for (const [key, entry] of server.presence) {
+      if (key !== peer.key && this._fresh(entry)) this._send(peer, { t: 'presence', s: server.id, p: entry.p, sig: entry.sig })
+    }
     this.emit('server-changed', server.id)
   }
 
@@ -661,6 +791,8 @@ class DixcordNode extends EventEmitter {
       }
       case 'part': {
         if (!peer.servers.delete(h.s)) return
+        const left = this.servers.get(h.s).presence.get(peer.key)
+        if (left) left.at = 0
         const hadVoice = peer.voice.delete(h.s)
         this.emit('server-changed', h.s)
         if (hadVoice) this.emit('voice', h.s)
@@ -705,9 +837,27 @@ class DixcordNode extends EventEmitter {
         this.emit('voice', server.id)
         return
       }
+      case 'presence': {
+        const server = this._sharedServer(peer, h.s)
+        if (server) this._onPresence(peer, server, h)
+        return
+      }
       case 'rtc': {
         const server = this._sharedServer(peer, h.s)
-        if (server && h.d !== null && typeof h.d === 'object') this.emit('rtc', server.id, peer.key, h.d)
+        if (!server || h.d === null || typeof h.d !== 'object' || Array.isArray(h.d)) return
+        if (h.to === undefined) return this.emit('rtc', server.id, peer.key, h.d)
+        // Signal relayé : on vérifie que l'expéditeur annoncé l'a bien signé.
+        if (typeof h.to !== 'string' || !HEX64.test(h.to) || typeof h.from !== 'string' || !HEX64.test(h.from)) return
+        if (!Number.isSafeInteger(h.ts) || !Number.isSafeInteger(h.hops) || typeof h.sig !== 'string') return
+        const r = { s: h.s, from: h.from, to: h.to, ts: h.ts, d: h.d }
+        let ok = false
+        try {
+          ok = cr.verify(rtcPayload(r), Buffer.from(h.sig, 'hex'), Buffer.from(h.from, 'hex'))
+        } catch {}
+        if (!ok || h.from === this.key) return
+        if (h.to === this.key) return this.emit('rtc', server.id, h.from, h.d)
+        if (h.hops + 1 >= C.RTC_MAX_HOPS) return
+        this._routeRtc(server, { t: 'rtc', ...r, sig: h.sig, hops: h.hops + 1 }, peer)
         return
       }
       case 'fget': {
@@ -769,6 +919,11 @@ class DixcordNode extends EventEmitter {
 
   _tick () {
     const now = Date.now()
+    if (!this._lastPresence || now - this._lastPresence >= C.PRESENCE_INTERVAL) {
+      this._lastPresence = now
+      for (const server of this.servers.values()) this._broadcastPresence(server)
+    }
+    this._expirePresence()
     const antiEntropy = now - this._lastAntiEntropy >= C.ANTI_ENTROPY_INTERVAL
     if (antiEntropy) this._lastAntiEntropy = now
     const connected = new Set()
@@ -795,6 +950,32 @@ class DixcordNode extends EventEmitter {
       }
     }
   }
+}
+
+function presencePayload (serverId, p) {
+  return Buffer.from('dixcord/presence/v1\n' + canonical({ s: serverId, p }), 'utf8')
+}
+
+function rtcPayload (r) {
+  return Buffer.from('dixcord/rtc/v1\n' + canonical(r), 'utf8')
+}
+
+function validPresence (p) {
+  if (p === null || typeof p !== 'object' || Array.isArray(p)) return false
+  if (!Object.keys(p).every((k) => ['key', 'name', 'ts', 'voice', 'off'].includes(k))) return false
+  if (typeof p.key !== 'string' || !HEX64.test(p.key) || !Number.isSafeInteger(p.ts)) return false
+  if (!isName(p.name, C.MAX_USER_NAME_LENGTH)) return false
+  if (p.off !== undefined && p.off !== true) return false
+  const v = p.voice
+  if (v === null) return true
+  if (typeof v !== 'object' || Array.isArray(v) || typeof v.ch !== 'string' || !CHANNEL_ID.test(v.ch)) return false
+  return ['mute', 'deaf', 'video', 'screen'].every((k) => typeof v[k] === 'boolean') && Object.keys(v).length === 5
+}
+
+// Ce qu'une présence change à l'affichage (en ligne, pseudo, état vocal).
+function presenceView (node, server, key, entry) {
+  if (!node._fresh(entry)) return 'off'
+  return JSON.stringify([entry.p.name, entry.p.voice])
 }
 
 function normalizeChannelName (name, kind) {

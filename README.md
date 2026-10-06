@@ -127,7 +127,8 @@ Si le vocal ne passe pas chez certains amis (réseaux très fermés, 4G/5G avec 
 - **Fichiers.** Un fichier n'est téléchargeable que si un membre qui le possède est en ligne. Les images et vidéos de moins de 8 Mo sont récupérées automatiquement. Taille maximale : 100 Mo.
 - **Pas de modération.** Tous les membres ont les mêmes droits : renommer ou supprimer un salon, renommer le serveur. On ne peut pas expulser quelqu'un ni révoquer un code d'invitation. Pour « changer la serrure », crée un nouveau serveur.
 - **Vocal en maillage.** Idéal jusqu'à 5 à 8 personnes : au-delà, chacun envoie son flux à tous les autres et la bande passante montante sature.
-- **Réseaux très restrictifs.** Sur certains réseaux (NAT symétriques, pare-feu d'entreprise), la connexion directe peut échouer.
+- **4G/5G, réseaux d'école ou d'entreprise.** Deux appareils sur ces réseaux ne peuvent souvent pas se connecter directement. Dixcord passe alors par un autre membre connecté aux deux : il relaie la présence, les messages et la signalisation des appels, et, dans un salon vocal, retransmet le son et la vidéo. Il faut donc qu'au moins un membre « bien connecté » (box à la maison) soit présent. Si personne ne peut servir de relais, ces deux membres ne se voient pas. Le relais consomme un peu plus de connexion chez celui qui relaie.
+- **Débit.** Pour garder un son fluide sur une connexion modeste, la caméra est limitée à 600 kbit/s et le partage d'écran à 1,5 Mbit/s (15 images/s, netteté du texte privilégiée), et le son passe en priorité.
 - L'ordre des messages suit l'horloge de leur auteur.
 - Les données sont stockées en clair sur ton disque, comme pour la plupart des messageries de bureau.
 
@@ -167,6 +168,7 @@ test/e2e/       Test de bout en bout : deux applications pilotées par Playwrigh
 ```bash
 npm test            # tests unitaires et d'intégration réseau (quelques secondes)
 npm run test:e2e    # deux vraies fenêtres qui discutent, s'appellent et partagent leur écran
+npm run test:e2e:relay  # trois fenêtres, dont deux sans liaison directe possible (comme en 4G)
                     # (Linux sans écran : xvfb-run -s "-screen 0 1920x1080x24" npm run test:e2e)
 DIXCORD_DEBUG=1 npm start   # affiche connexions et déconnexions dans le terminal
 ```

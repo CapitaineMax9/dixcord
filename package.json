@@ -20,7 +20,8 @@
     "test:e2e": "node test/e2e/smoke.js",
     "dist:win": "electron-builder --win --publish never",
     "dist:linux": "electron-builder --linux --publish never",
-    "dist:mac": "electron-builder --mac --publish never"
+    "dist:mac": "electron-builder --mac --publish never",
+    "test:e2e:relay": "node test/e2e/relay.js"
   },
   "author": "CapitaineMax9",
   "build": {

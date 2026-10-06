@@ -29,7 +29,8 @@ async function setup (t) {
     return dir
   }
   const make = async (name, dir = tmpDir(), opts = {}) => {
-    const node = new DixcordNode({ storageDir: dir, swarmOptions: () => ({ dht: testnet.createNode() }), ...opts })
+    const { swarm = {}, ...rest } = opts
+    const node = new DixcordNode({ storageDir: dir, swarmOptions: () => ({ dht: testnet.createNode(), ...swarm }), ...rest })
     await node.start()
     if (name) node.setName(name)
     nodes.push(node)
@@ -132,6 +133,55 @@ test('un pair qui redémarre se reconnecte aussitôt au même pair', async (t) =
     bob = await make(null, bobDir)
     await waitFor(() => bob.getMessages(id, text.id).messages.length === i + 1, 'reconnexion et rattrapage', 10000)
   }
+})
+
+test('deux membres qui ne peuvent pas se connecter se voient via un troisième', async (t) => {
+  const { make, tmpDir } = await setup(t)
+  // Bob et Carol refusent de se connecter directement (comme deux appareils en 4G).
+  const blocked = new Set()
+  const firewall = { swarm: { firewall: (remotePublicKey) => blocked.has(remotePublicKey.toString('hex')) } }
+  const alice = await make('Alice')
+  const bob = await make('Bob', tmpDir(), firewall)
+  const carol = await make('Carol', tmpDir(), firewall)
+  blocked.add(bob.key)
+  blocked.add(carol.key)
+
+  const { id } = alice.createServer('Relais')
+  await alice.flushed(id)
+  bob.joinServer(alice.getInvite(id))
+  carol.joinServer(alice.getInvite(id))
+  await waitFor(() => isOnline(alice, id, bob.key) && isOnline(alice, id, carol.key), 'Alice voit Bob et Carol')
+  assert.ok(!bob.peers.has(carol.key), 'pas de connexion directe Bob-Carol')
+
+  // Présence relayée par Alice.
+  await waitFor(() => isOnline(bob, id, carol.key) && isOnline(carol, id, bob.key), 'Bob et Carol se voient en ligne')
+  const seen = bob.serverView(id).members.find((m) => m.key === carol.key)
+  assert.equal(seen.name, 'Carol')
+  assert.equal(seen.relayed, true)
+
+  // État vocal relayé.
+  const { voice } = channelsOf(alice, id)
+  carol.setVoice({ server: id, channel: voice.id, mute: true })
+  await waitFor(() => (bob.voiceMembers(id)[voice.id] || []).some((m) => m.key === carol.key && m.mute), 'Bob voit Carol dans le vocal')
+
+  // Signalisation WebRTC relayée et authentifiée.
+  const signal = once(carol, 'rtc')
+  assert.equal(bob.sendRtc(id, carol.key, { description: { type: 'offer', sdp: 'v=0' } }), true)
+  const [, from, data] = await signal
+  assert.equal(from, bob.key)
+  assert.equal(data.description.type, 'offer')
+
+  // Alice ne peut pas se faire passer pour Bob auprès de Carol.
+  let forged = false
+  carol.on('rtc', (_s, f, d) => { if (d.forged) forged = true })
+  const r = { s: id, from: bob.key, to: carol.key, ts: Date.now(), d: { forged: true } }
+  alice._send(alice.peers.get(carol.key), { t: 'rtc', ...r, sig: 'ab'.repeat(64), hops: 0 })
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  assert.equal(forged, false)
+
+  // Carol quitte l'application : Bob la voit hors ligne aussitôt.
+  await carol.stop()
+  await waitFor(() => !isOnline(bob, id, carol.key) && !bob.voiceMembers(id)[voice.id], 'Carol hors ligne pour Bob', 3000)
 })
 
 test('les serveurs sont cloisonnés, y compris sur une connexion partagée', async (t) => {

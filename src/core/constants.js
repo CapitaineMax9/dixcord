@@ -28,5 +28,12 @@ module.exports = {
   LONELY_REFRESH_MAX: 60 * 1000,
   TICK_INTERVAL: 5 * 1000,
   // Délai avant de fermer une connexion qui ne partage aucun serveur avec nous.
-  USELESS_PEER_GRACE: 30 * 1000
+  USELESS_PEER_GRACE: 30 * 1000,
+
+  // Présence relayée : utile quand deux membres ne peuvent pas se connecter
+  // directement (4G/5G, réseaux d'école ou d'entreprise…).
+  PRESENCE_INTERVAL: 15 * 1000,
+  PRESENCE_TTL: 40 * 1000,
+  // Nombre maximal de relais pour un signal d'appel.
+  RTC_MAX_HOPS: 3
 }

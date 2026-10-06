@@ -89,7 +89,11 @@ function swarmOptions () {
     const [host, port] = entry.trim().split(':')
     return { host, port: Number(port) }
   })
-  return { dht: new DHT({ bootstrap, host: process.env.DIXCORD_DHT_HOST || undefined, ephemeral: true }) }
+  const opts = { dht: new DHT({ bootstrap, host: process.env.DIXCORD_DHT_HOST || undefined, ephemeral: true }) }
+  // Tests : refuse les connexions directes avec ces membres (comme en 4G).
+  const blocked = new Set((process.env.DIXCORD_NO_DIRECT || '').split(',').filter(Boolean))
+  if (blocked.size) opts.firewall = (remotePublicKey) => blocked.has(remotePublicKey.toString('hex'))
+  return opts
 }
 
 function send (type, payload) {
@@ -118,7 +122,9 @@ const handlers = {
     me: node.me(),
     servers: node.listServers(),
     iceServers: settings.iceServers,
-    platform: process.platform
+    platform: process.platform,
+    // Tests : simule l'échec de la liaison WebRTC directe avec ces membres.
+    noDirect: process.env.DIXCORD_DEBUG && process.env.DIXCORD_NO_DIRECT ? process.env.DIXCORD_NO_DIRECT.split(',') : []
   }),
   setName: (name) => node.setName(name),
   createServer: (name) => node.createServer(name),
